@@ -307,7 +307,7 @@ GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 gi
 
 **P9 维护型更新基线 = 线上最新包**，本地母本常落后。母本与包漂移时先 diff。含真实生辰/持仓/私有路径/真实域名的 skill，发布包必须是**脱敏底稿 + 修复叠加**，禁止本地母本直接打包。
 
-**P10 脱敏**：`example.com` 系真实域名、真实 GitHub 用户名、"企业代理环境"表述 —— 私有库可留，**公开发布前必须替换成 example.com 占位符并去除公司环境表述**。发布前三件套：claim-to-source → cross-material-consistency → localization；P0 未清零不发布。
+**P10 脱敏**：真实域名、真实 GitHub 用户名、"企业代理环境"表述 —— 私有库可留，**公开发布前必须替换成 example.com 占位符并去除公司环境表述**。发布前三件套：claim-to-source → cross-material-consistency → localization；P0 未清零不发布。
 
 **P11 clawhub 存量会被新引擎重扫**（推翻"旧版本不重扫"认知）：平台对存量 latest 版本重扫并拉进 `review_llm_review` 队列 —— Dashboard「Needs review」= 队列状态**不是新指控**。跨版本对比必须核对 scannerVersion。UI 右侧 Vulnerability Patterns ⚠️ 是 pattern 类别目录标记，非指控条目。引擎 issueCount 展示口径有矛盾（44 vs 明细 25、score=100 与 CRITICAL 并存）→ **以 issues 明细为准**。
 
