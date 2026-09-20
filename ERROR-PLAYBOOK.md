@@ -174,6 +174,8 @@ python "~/.skillhub/skills_store_cli.py" publish <dir> --dry-run --json
 
 ---
 
+**F4 翻转一条规则 = 全文搜同义表述，不是改一处就完**。改掉一条硬规则（如"新规则需人类批准"→"agent 当场写入"）时，同一主张会以不同措辞散落在多个位置：操作步骤、Human-in-the-loop 清单、Failure Handling 表行、输出模板的一行、`references/*.md`、README / README_zh。**只改主条目会留下 5-6 处与新规则直接矛盾的文字**，而自相矛盾比规则本身更容易被扫描器判为问题（会反向升级）。→ 改完主条目后，用规则里的**关键词**（approval / propose / draft / 人工确认 / 提议）全仓 grep 一遍再收工。实证：2026-09-20 workflow-guard-rails 1.0.4 只翻了 Hard Rule #7，遗留 6 处矛盾表述，1.0.5 才补齐。
+
 ### 2.3 跑命令 / shell
 
 **C1 shim 缺 coreutils 且静默失败**（最高频）。
@@ -313,7 +315,7 @@ GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 gi
 
 **P14 skillhub 没有可读接口，发布状态无法远程核实**。`GET /api/v1/community/skills/{slug}`、`.../mine`、`.../list`、`.../rankings` **全部 405**（带 Bearer 也一样），只有 POST publish 通。→ 判断"某 skill 是否上过 skillhub"改用旁证：clawhub `inspect <slug> --versions` 有 @<your-handle> 记录 + GitHub `<your-handle>/<slug>` 存在（三平台同步惯例）。**不要用 DELETE 探活（P7），也不要为了确认就先发一版（发布是对外动作，需确认门禁）。**
 
-**P15 skillhub 发布走自建 multipart 脚本，CLI 在本机已不存在**。旧 CLI `skills_store_cli.py` 全盘搜索不到（AppData / .workbuddy / workspace 均无），别再花时间找。直接 POST `https://api.skillhub.cn/api/v1/community/skills/publish`：Bearer 取 `~/.skillhub/credentials.json` 的 **`user.token`**（顶层没有 token 字段）；multipart 两部分 —— ① `payload`（`application/json`）：`slug / displayName / version / description / changelog / category / subCategories / source:"community" / tags`；② 每个文件一个 part，**field name 必须是 `files`**（`file`、`files[]` 未验证），`filename`=相对路径（如 `references/x.md`），`Content-Type: text/markdown`。**HTTP 201 = 成功**（返回 `ok:true` + `version` + `fileCount` + `skillId`）。已验证：2026-09-18 workflow-guard-rails 1.0.4，4 文件，一次 201。
+**P15 skillhub 发布走自建 multipart 脚本，CLI 在本机已不存在**。旧 CLI `skills_store_cli.py` 全盘搜索不到（AppData / .workbuddy / workspace 均无），别再花时间找。直接 POST `https://api.skillhub.cn/api/v1/community/skills/publish`：Bearer 取 `~/.skillhub/credentials.json` 的 **`user.token`**（顶层没有 token 字段）；multipart 两部分 —— ① `payload`（`application/json`）：`slug / displayName / version / description / changelog / category / subCategories / source:"community" / tags`；② 每个文件一个 part，**field name 必须是 `files`**（`file`、`files[]` 未验证），`filename`=相对路径（如 `references/x.md`），`Content-Type: text/markdown`。**HTTP 201 = 成功**（返回 `ok:true` + `version` + `fileCount` + `skillId`）。已验证：2026-09-18 workflow-guard-rails 1.0.4，4 文件，一次 201。**P15a 连续发布多个 skill 会撞 429 RATE_LIMITED（20s 重试不够）→ 90s 退避一次即过（2026-09-20 tcms 五连发实证：4 发 201 后第 5 个 429×3（20s 间隔全撞），90s 间隔一次 201）。批量发布直接用 90s 间隔，别用 20s 探底。**
 
 ---
 
@@ -455,6 +457,14 @@ GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 gi
   2. 找到后**实测触发一次**（本轮做法：把 status 在临时副本里改成三种取值，观察 C9 是否按预期变化）。
   3. 机器判据的**状态集合/白名单**必须是**模块层常量**，以便回归测试直接导入断言 —— 藏在函数体里就没人能守它。
 - **沉淀方向**：为「可执行状态集合」这类判据建立**端到端回归**（正样本 + 已知应当 FAIL 的样本都必须有），并**实测注入缺陷后测试真的会 FAIL**。已写入项目私有 skill **HR 47** 的推论。
+
+### 3.2.3 验证脚本自己的路径处理会制造假差异（V5 · 2026-09-20 建）
+
+**DIFF 先查归一化签名，再信真丢失。**
+
+- **实证（tcms 补发轮回装验证）**：验证脚本用 `os.path.basename(n)` 取 zip 内条目名 —— Python 的 ntpath 对 `references/brand-rules.md` 返回 `brand-rules.md`（basename 同时识别 `/` 和 `\`），子目录被脚本自己拍平 → 与本地相对路径对比报出 5 条 MISSING + 5 条假 EXTRA（`MISSING references/brand-rules.md` vs `EXTRA brand-rules.md`，**尺寸完全一致**），差点误判「平台把子目录拍平了」。用 zip 原始完整路径重新对照后 6/6 全 PASS —— 丢文件的是验证脚本，不是发布包。
+- **归一化 bug 的签名**：每条 MISSING 都有一条同名、同尺寸的 EXTRA 与之对应（只是路径前缀不同）。看到这个形态先修验证脚本，别急着下「平台/管线丢数据」的结论。
+- **排查动作**：① 验证 zip / 文件树结构用**原始相对路径**，禁 `basename` 拍平；② 平台包可能有 `slug/` 前缀或平台自生成文件（`skill-card.md`、`.clawhub/`），对比前做白名单归一化；③ 结论「结构被拍平/丢目录」必须先用**已知正常的对照包**（本轮用 sap@1.5.8）交叉验证原始路径后再下。
 
 ---
 
