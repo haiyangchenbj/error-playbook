@@ -761,6 +761,18 @@ GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 gi
 - **与 G8 / G9 的关系**：G8 说「远端有本地没有的提交 → 默认拒绝推送」，G9 说「给某仓库改页面前先对该仓库 fetch 对账」。本条补的是**更前置的一步**：在决定「推什么」之前，先确认你看到的副本状态取自哪一层。本轮两仓均 `behind 2`，按 G8 应**拒推** —— 这个结论只有跑了 ② ④ 两层才能得出。
 - **判据**：报告里写「A 副本 = X B / md5 Y」时，同一句里必须写明**这是哪一层**（工作树 / HEAD / 远端）。写不出来的，说明没查。
 
+**G11 HEAD 被外部 `reset` 回去，commit 从 `git log` 消失但对象仍在**（2026-09-27 实证，复发 1；与 §1 第 31 条 / §2.2 W13 同根，同一根因的第二个面）。
+- **实证（ERROR-PLAYBOOK 镜像重建）**：把镜像重建并 commit 完成后（公开 `56208f1` / 私有 `db615ca`），数分钟内两仓 HEAD 均被**外部进程** reset 到 `origin/main` —— 私有仓 `git reflog` 留下 `HEAD@{0}: reset: moving to origin/main`，我的 commit 从 `git log` 消失，工作树被还原成远端旧版（公开 236,149 → 181,732 B）。**下一次读取时看到的是「我没提交成功」的假象。**
+- **判别动作**：`git log` 里自己的 commit 不见了，第一反应**不要**是「commit 失败 / 没提交上 / 命令写错」。先跑 `git reflog -10` —— reset / rebase / checkout 全在里面留痕，且**被 reset 掉的 commit 对象仍在对象库中**，`git reset --hard <sha>` 或 `git cherry-pick <sha>` 可完整找回。
+- **根因不在 git，在于「有第二个写者」**：本环境存在一个周期性的 ERROR-PLAYBOOK 镜像同步流程（commit message 形态 `sync <日期>: pull from origin <sha> (github.com 502, via API)`；**不在已注册的 automation 列表里**，2026-09-27 查证）。它对两仓执行「对齐远端 + 覆盖工作树」。**凡本地对这两个仓的手工改动，在下一次它运行时都会被抹掉。** 9/26 23:35 覆盖 canonical 的事故与本次抹掉镜像 commit，是**同一个写者的两次动作**。
+- **正确做法（四条）**：
+  1. 对已知存在第二个写者的仓库，改动**必须 commit**。只改工作树 = 下一次 reset 即丢。
+  2. commit 后**立即回验 sha 还在不在**（`git log -1 --format=%H`），并把 sha 写进报告。HEAD 被 reset 后，凭 sha 仍可找回。
+  3. **需要长期留存的改动，另存一份仓库外副本**，或让内容同时落到不在该仓的落点（如 canonical）。
+  4. 判断「某个改动为什么消失了」，`git reflog` 是唯一能给出真相的地方（`git log` 只显示可达 commit）。
+- **与 §1 第 31 条 / W13 的关系**：那两条讲 **canonical 被下游覆盖**（方向倒转）；本条讲 **下游自己也被周期性 reset**。合起来才是完整定性 —— **根因是有第二个写者，症状随它写哪一侧而变。** 修方向（本条 = 保 commit）只是止血；根治要先定位并停掉那个写者。
+- **判据**：报告里写「已同步到仓库 X」时，必须同时给出 **commit sha**。给不出 sha 的「已同步」不成立 —— 它可能只存在于工作树，随时会被下一个 reset 抹掉。
+
 ---
 
 ### 2.6 发布 / 同步（skill 三平台）
